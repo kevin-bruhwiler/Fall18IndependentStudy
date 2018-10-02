@@ -110,7 +110,7 @@ class Ant:
         '''+ 100/(1+self.distance_from_food(food))'''
         #print(self.score)
         self.add_mem((obs,action,self.score+10/(1+self.distance_from_food(food)),self.make_input(food,arr),self.discount))
-        self.score = -1
+        self.score = 0
         if len(self.mem) > 1:
             batch_s = min(self.batch_size, len(self.mem))
             batch = random.sample(self.mem, batch_s)
