@@ -4,6 +4,7 @@ from collections import deque
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
+import sys
 _CUDA = torch.cuda.is_available()
 
 
@@ -21,7 +22,7 @@ class Model(nn.Module):
 
 
 class Ant:
-    def __init__(self, size, id):
+    def __init__(self, size, id, filename):
         self.location = np.array([np.random.randint(0+4,size-4), np.random.randint(0+4,size-4)])
         self.previous_location = np.array([np.random.choice(size), np.random.choice(size)])
         self.id = id
@@ -33,8 +34,12 @@ class Ant:
         self.score = 0
         self.total_score = 0
         self.collision = False
-        self.model = Model(self.input_size, self.output_size)
-        self.target_model = Model(self.input_size, self.output_size)
+        if filename != "none":
+            self.model = torch.load("/home/kevin/Documents/Emergence/saved_behaviors/{}".format(filename))
+            self.target_model = copy.deepcopy(self.model)
+        else:
+            self.model = Model(self.input_size, self.output_size)
+            self.target_model = Model(self.input_size, self.output_size)
         self.optimizer = torch.optim.Adam(self.model.parameters())
         self.loss_func = nn.MSELoss()
         self.iter = 0
@@ -191,7 +196,7 @@ class Food:
         
 
 class Environment:
-	def __init__(self, size, num_ants, food_size):
+	def __init__(self, size, num_ants, food_size, log=False, log_frequency=1000, log_file_name="", ant_file_name="none"):
 		self.size = size
 		self.num_ants = num_ants
 		self.ants = set()
@@ -201,6 +206,13 @@ class Environment:
 		self.arr = np.zeros([self.size]*2 + [3])
 		self.round = 1
 		self.countdown = 900
+		self.ant_file = ant_file_name
+		self.log = log
+		self.log_frequency = log_frequency
+		self.log_file_name = log_file_name
+		if self.log:
+			 with open(self.log_file_name, 'w') as outfile:
+				 outfile.write("step,max_score,average_score,stdev_score,min_score\n")
 	
 	def print_highest_score(self, step=None):
 		highest_score = 0
@@ -246,15 +258,30 @@ class Environment:
 			self.arr[l1,l2]= 0
 			#self.ants.remove(dead_ant) #This permanently removes the ant
 			dead_ant.reset() #This tells the ant that it has died, and resets it
+			#This loop punishes each other ant for the death of this one
+			for ant in self.ants:
+				if ant is not dead_ant:
+					ant.score -= 20
 		self.arr[self.food.circle] = 0
 		self.food.step()
 		if len(self.ants) < self.num_ants:
 			self.countdown -= 1
 		
+	def log_results(self, step):
+		data = np.zeros(len(self.saved_ants))
+		for i, ant in enumerate(self.saved_ants):
+			data[i] = ant.total_score
+		max = np.max(data)
+		mean = np.mean(data)
+		stdev = np.std(data)
+		min = np.min(data)
+		with open(self.log_file_name, 'a') as outfile:
+			outfile.write(str(step)+","+str(max)+","+str(mean)+","+str(stdev)+","+str(min)+"\n")
+	
 	def start(self):
 		'''use esc to see the results'''
 		for i in range(self.num_ants):
-			new_ant = Ant(size,i)
+			new_ant = Ant(size,i,self.ant_file)
 			self.ants.add(new_ant)
 			self.saved_ants.add(new_ant)
 		step = 0
@@ -262,6 +289,13 @@ class Environment:
 			step += 1
 			if step % 1000 == 0:
 				self.print_highest_score(step=step)
+			if step % self.log_frequency == 0 and self.log:
+				self.log_results(step)
+			if step == 100000:
+				done = True
+				for ant in self.saved_ants:
+					torch.save(ant.model, "saved_behaviors/ant{}_model.pth".format(ant.id))
+				break
 			if len(self.ants) == 0 or self.countdown == 0:
 				done = False
 				self.print_highest_score()
@@ -271,6 +305,8 @@ class Environment:
 			k = cv2.waitKey(1) & 0xFF
 			if k == 27: 
 				done = True
+				for ant in self.saved_ants:
+					torch.save(ant.model, "saved_behaviors/ant{}_model.pth".format(ant.id))
 				break 
 		self.print_highest_score()
 		self.reset()
@@ -288,9 +324,9 @@ class Environment:
         
 if __name__=="__main__":
 	size = 80
-	num_ants = 15
+	num_ants = 30
 	food_size = 8
-	env = Environment(size, num_ants, food_size)
+	env = Environment(size, num_ants, food_size, log=True, log_frequency=1000, log_file_name=sys.argv[1:][0], ant_file_name=sys.argv[1:][1])
 	done = False
 	while not done:
 		done = env.start()
