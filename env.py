@@ -261,7 +261,7 @@ class Environment:
 			#This loop punishes each other ant for the death of this one
 			for ant in self.ants:
 				if ant is not dead_ant:
-					ant.score -= 20
+					ant.score -= sys.argv[1:][2]
 		self.arr[self.food.circle] = 0
 		self.food.step()
 		if len(self.ants) < self.num_ants:
